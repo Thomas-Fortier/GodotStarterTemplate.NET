@@ -2,7 +2,7 @@
   "version": "2.0.0",
   "tasks": [
     {
-      "label": "Rename Godot Template",
+      "label": "Initialize Godot Template",
       "type": "shell",
       "command": "powershell.exe",
       "args": [
@@ -10,7 +10,7 @@
         "-ExecutionPolicy",
         "Bypass",
         "-File",
-        "${workspaceFolder}\\Scripts\\RenameProject.ps1"
+        "${workspaceFolder}\\Scripts\\InitializeProject.ps1"
       ],
       "presentation": {
         "reveal": "always",

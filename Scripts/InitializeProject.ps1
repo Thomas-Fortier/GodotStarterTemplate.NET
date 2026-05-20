@@ -10,10 +10,10 @@
     and updates internal references inside project.godot, .sln, and .csproj files.
 
 .EXAMPLE
-    powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\Scripts\RenameProject.ps1
+    powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\Scripts\InitializeProject.ps1
 
 .EXAMPLE
-    powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\Scripts\RenameProject.ps1 -Name "MyGame"
+    powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\Scripts\InitializeProject.ps1 -Name "MyGame"
 #>
 
 [CmdletBinding()]
@@ -25,7 +25,30 @@ param(
 $oldName = 'StarterTemplate'
 
 function Get-ProjectRoot {
-    return Split-Path -Parent $MyInvocation.MyCommand.Path
+    if ($PSScriptRoot) {
+        return Split-Path -Parent $PSScriptRoot
+    }
+
+    if ($MyInvocation.MyCommand.Path) {
+        return Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
+    }
+
+    $currentPath = (Get-Location).ProviderPath
+    if ($currentPath) {
+        $currentLeaf = Split-Path -Leaf $currentPath
+        if ($currentLeaf -ieq 'Scripts') {
+            $candidate = Split-Path -Parent $currentPath
+            if (Test-Path (Join-Path $candidate 'Sources')) {
+                return $candidate
+            }
+        }
+
+        if (Test-Path (Join-Path $currentPath 'Sources')) {
+            return $currentPath
+        }
+    }
+
+    return $currentPath
 }
 
 function Validate-ProjectName {
@@ -65,18 +88,6 @@ if (-not (Test-Path $sourceRoot)) {
 
 Write-Output "Renaming project from '$oldName' to '$Name'..."
 
-# Rename directories containing the old name inside Sources.
-$dirs = Get-ChildItem -Path $sourceRoot -Directory -Recurse | Where-Object { $_.Name.Contains($oldName) }
-$dirs = $dirs | Sort-Object { $_.FullName.Length } -Descending
-foreach ($dir in $dirs) {
-    $newDirName = $dir.Name.Replace($oldName, $Name)
-    if ($newDirName -ne $dir.Name) {
-        $newPath = Join-Path $dir.Parent.FullName $newDirName
-        Write-Output "Renaming directory:`n  $($dir.FullName)`n  -> $newPath"
-        Move-Item -LiteralPath $dir.FullName -Destination $newPath
-    }
-}
-
 # Rename .csproj files whose names contain the old name.
 $csprojFiles = Get-ChildItem -Path $sourceRoot -Filter '*.csproj' -Recurse
 foreach ($file in $csprojFiles) {
@@ -85,6 +96,22 @@ foreach ($file in $csprojFiles) {
         $newPath = Join-Path $file.DirectoryName $newFileName
         Write-Output "Renaming .csproj:`n  $($file.FullName)`n  -> $newPath"
         Move-Item -LiteralPath $file.FullName -Destination $newPath
+    }
+}
+
+# Rename any directories under Sources that contain the old name.
+$dirs = Get-ChildItem -Path $sourceRoot -Directory -Recurse | Where-Object { $_.Name.Contains($oldName) }
+$dirs = $dirs | Sort-Object { $_.FullName.Length } -Descending
+foreach ($dir in $dirs) {
+    $newDirName = $dir.Name.Replace($oldName, $Name)
+    if ($newDirName -ne $dir.Name) {
+        $newPath = Join-Path $dir.Parent.FullName $newDirName
+        Write-Output "Renaming directory:`n  $($dir.FullName)`n  -> $newPath"
+        if (Test-Path $newPath) {
+            Write-Warning "Target directory already exists: $newPath. Skipping rename of $($dir.FullName)."
+        } else {
+            Move-Item -LiteralPath $dir.FullName -Destination $newPath
+        }
     }
 }
 
@@ -112,7 +139,15 @@ if (Test-Path $slnPath) {
     $newSlnPath = Join-Path $root "$Name.sln"
     if ($newSlnPath -ne $slnPath) {
         Write-Output "Renaming solution file:`n  $slnPath`n  -> $newSlnPath"
-        Move-Item -LiteralPath $slnPath -Destination $newSlnPath
+        Move-Item -LiteralPath $slnPath -Destination $newSlnPath -Force
+    }
+
+    if (Test-Path $slnPath) {
+        Remove-Item -LiteralPath $slnPath -Force
+        Write-Output "Removed old solution file: $slnPath"
+    }
+    if (Test-Path $newSlnPath) {
+        Write-Output "Verified new solution file: $newSlnPath"
     }
 } else {
     Write-Warning "Solution file '$slnPath' was not found. Skipping .sln updates."
@@ -137,5 +172,5 @@ if (Test-Path $readmePath) {
 Set-Content -LiteralPath $readmePath -Value "# $Name`n" -Encoding utf8
 Write-Output "Replaced README at $readmePath"
 
-Write-Output "Rename complete."
-Write-Output "If you use VS Code, run the task 'Rename Godot Template' or execute Scripts\RenameProject.ps1 directly."
+Write-Output "Initialize complete."
+Write-Output "If you use VS Code, run the task 'Initialize Godot Template' or execute Scripts\InitializeProject.ps1 directly."
